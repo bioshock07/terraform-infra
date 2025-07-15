@@ -1,1 +1,1 @@
-bucket_name = "my-jenkins-tf-bucket-propercicd" 
+bucket_name = "my-jenkins-tf-bucket" 
