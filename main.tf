@@ -7,8 +7,8 @@
 //  acl    = "private"
 //}
 
-resource "aws_instance""example"{
-ami="ami-0440a5f5e96917e8f"
+resource "aws_instance""example1"{
+ami="ami-084568db4383264d4"
 instance_type="t2.micro"
 tags = {
 Name="tfinstance"
