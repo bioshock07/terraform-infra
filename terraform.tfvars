@@ -1,1 +1,1 @@
-bucket_name = "jenkins-tfbuck" 
+bucket_name = "my-jenkins-tf-bucket" 
