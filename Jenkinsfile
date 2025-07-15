@@ -35,22 +35,9 @@ pipeline {
                         HAS_DESTROY = true
                     }
 
-                    // Save to file to make available across later stages
                     writeFile file: 'has_destroy.txt', text: "${HAS_DESTROY}"
-                    writeFile file: 'plan_summary.txt', text: PLAN_OUTPUT.readLines().find { it.contains("to add") || it.contains("to destroy") || it.contains("to change") } ?: "No summary found"
+                    writeFile file: 'plan_summary.txt', text: PLAN_OUTPUT.readLines().find { it.contains("to add") || it.contains("to change") || it.contains("to destroy") } ?: "No summary line"
                 }
-            }
-        }
-
-        stage('Terraform Destroy') {
-            when {
-                expression {
-                    return fileExists('has_destroy.txt') && readFile('has_destroy.txt').trim() == 'true'
-                }
-            }
-            steps {
-                echo "⚠️ Planned destruction:"
-                echo readFile('plan_summary.txt')
             }
         }
 
@@ -71,8 +58,18 @@ pipeline {
 
         stage('Terraform Apply') {
             steps {
-                echo "🚀 Applying the plan now..."
+                echo "🚀 Applying the plan..."
                 sh 'terraform apply -auto-approve tfplan'
+            }
+        }
+
+        stage('Terraform Destroy') {
+            when {
+                expression { return fileExists('has_destroy.txt') && readFile('has_destroy.txt').trim() == 'true' }
+            }
+            steps {
+                echo "💥 Destruction Summary:"
+                echo readFile('plan_summary.txt')
             }
         }
     }
