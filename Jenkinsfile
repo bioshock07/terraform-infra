@@ -2,11 +2,23 @@ pipeline {
     agent any
 
     environment {
-        AWS_ACCESS_KEY_ID     = credentials('aws-access-key')
-        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-key')
+        ACTION = ''
     }
 
     stages {
+        stage('Select Action') {
+            steps {
+                script {
+                    def userChoice = input(
+                        id: 'ActionInput', message: 'Choose Terraform Action', parameters: [
+                            choice(choices: ['plan', 'apply', 'destroy'], description: 'Select the operation to perform', name: 'ACTION')
+                        ]
+                    )
+                    env.ACTION = userChoice
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -19,34 +31,45 @@ pipeline {
             }
         }
 
-        // stage('Terraform Validate') {
-        //     steps {
-        //         sh 'terraform validate'
-        //     }
-        // }
+        stage('Terraform Validate') {
+            steps {
+                sh 'terraform validate'
+            }
+        }
 
         stage('Terraform Plan') {
             steps {
-                sh 'terraform plan -out=tfplan'
+                sh 'terraform plan -input=false -out=tfplan -var-file=terraform.tfvars'
             }
         }
 
         stage('Terraform Apply') {
             when {
-                branch 'main'
+                expression { env.ACTION == 'apply' }
             }
             steps {
+                input message: 'Confirm Apply?'
                 sh 'terraform apply -auto-approve tfplan'
+            }
+        }
+
+        stage('Terraform Destroy') {
+            when {
+                expression { env.ACTION == 'destroy' }
+            }
+            steps {
+                input message: 'Confirm Destroy?'
+                sh 'terraform destroy -auto-approve -var-file=terraform.tfvars'
             }
         }
     }
 
     post {
         success {
-            echo 'Terraform pipeline succeeded ✅'
+            echo "Pipeline completed successfully with action: ${env.ACTION}"
         }
         failure {
-            echo 'Terraform pipeline failed ❌'
+            echo "Pipeline failed during action: ${env.ACTION}"
         }
     }
 }
