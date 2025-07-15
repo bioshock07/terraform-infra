@@ -2,7 +2,8 @@ pipeline {
     agent any
 
     environment {
-        ACTION = ''
+        PLAN_OUTPUT = ''
+        HAS_DESTROY = false
     }
 
     stages {
@@ -26,62 +27,54 @@ pipeline {
 
         stage('Terraform Plan') {
             steps {
-                sh 'terraform plan -input=false -out=tfplan -var-file=terraform.tfvars'
-            }
-        }
-
-        stage('Select Action') {
-            steps {
                 script {
-                    def userChoice = input(
-                        id: 'ActionInput',
-                        message: 'Terraform plan completed successfully. What do you want to do next?',
-                        parameters: [
-                            choice(choices: ['apply', 'destroy'], description: 'Choose the operation to perform', name: 'ACTION')
-                        ]
-                    )
-                    writeFile file: 'selected_action.txt', text: userChoice
+                    PLAN_OUTPUT = sh(script: 'terraform plan -input=false -out=tfplan -var-file=terraform.tfvars', returnStdout: true)
+                    echo PLAN_OUTPUT
+                    if (PLAN_OUTPUT.contains("to destroy")) {
+                        HAS_DESTROY = true
+                    }
                 }
-            }
-        }
-
-        stage('Terraform Apply') {
-            when {
-                expression {
-                    return fileExists('selected_action.txt') &&
-                           readFile('selected_action.txt').trim() == 'apply'
-                }
-            }
-            steps {
-                sh 'terraform apply -auto-approve tfplan'
             }
         }
 
         stage('Terraform Destroy') {
             when {
-                expression {
-                    return fileExists('selected_action.txt') &&
-                           readFile('selected_action.txt').trim() == 'destroy'
-                }
+                expression { return HAS_DESTROY }
             }
             steps {
-                sh 'terraform destroy -auto-approve -var-file=terraform.tfvars'
+                script {
+                    def destroyLine = PLAN_OUTPUT.readLines().find { it =~ /to destroy/ } ?: "Resources will be destroyed."
+                    echo "⚠️ ${destroyLine}"
+                }
+            }
+        }
+
+        stage('Apply Plan') {
+            steps {
+                script {
+                    def proceed = input(
+                        id: 'ApplyApproval',
+                        message: 'Terraform plan completed. Proceed with apply?',
+                        parameters: [booleanParam(defaultValue: false, description: 'Apply the plan?', name: 'CONFIRM_APPLY')]
+                    )
+                    if (!proceed) {
+                        error("❌ User aborted.")
+                    }
+                }
+                sh 'terraform apply -auto-approve tfplan'
             }
         }
     }
 
     post {
         success {
-            script {
-                def action = fileExists('selected_action.txt') ? readFile('selected_action.txt').trim() : 'N/A'
-                echo "Pipeline completed successfully with action: ${action}"
-            }
+            echo "✅ Pipeline completed successfully."
         }
         failure {
-            script {
-                def action = fileExists('selected_action.txt') ? readFile('selected_action.txt').trim() : 'N/A'
-                echo "Pipeline failed during action: ${action}"
-            }
+            echo "❌ Pipeline failed. Check logs."
+        }
+        always {
+            sh 'rm -f tfplan || true'
         }
     }
 }
