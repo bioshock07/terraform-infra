@@ -7,6 +7,14 @@ resource "aws_s3_bucket_acl" "example_acl" {
   acl    = "private"
 }
 
+resource "aws_instance""example"{
+ami="ami-0440a5f5e96917e8f"
+instance_type="t2.micro"
+tags = {
+Name="tfinstance"
+}
+}
+
 terraform {
   backend "s3" {
     bucket         = "jenkins-tfbuck"
