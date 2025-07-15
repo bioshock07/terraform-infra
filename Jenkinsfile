@@ -6,19 +6,6 @@ pipeline {
     }
 
     stages {
-        stage('Select Action') {
-            steps {
-                script {
-                    def userChoice = input(
-                        id: 'ActionInput', message: 'Choose Terraform Action', parameters: [
-                            choice(choices: ['plan', 'apply', 'destroy'], description: 'Select the operation to perform', name: 'ACTION')
-                        ]
-                    )
-                    env.ACTION = userChoice
-                }
-            }
-        }
-
         stage('Checkout') {
             steps {
                 checkout scm
@@ -40,6 +27,19 @@ pipeline {
         stage('Terraform Plan') {
             steps {
                 sh 'terraform plan -input=false -out=tfplan -var-file=terraform.tfvars'
+            }
+        }
+
+        stage('Select Action') {
+            steps {
+                script {
+                    def userChoice = input(
+                        id: 'ActionInput', message: 'Terraform plan completed successfully. Choose what to do next:', parameters: [
+                            choice(choices: ['apply', 'destroy'], description: 'Select the operation to perform', name: 'ACTION')
+                        ]
+                    )
+                    env.ACTION = userChoice
+                }
             }
         }
 
