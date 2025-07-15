@@ -34,18 +34,26 @@ pipeline {
             steps {
                 script {
                     def userChoice = input(
-                        id: 'ActionInput', message: 'Terraform plan completed successfully. Choose what to do next:', parameters: [
+                        id: 'ActionInput',
+                        message: 'Terraform plan completed successfully. Choose what to do next:',
+                        parameters: [
                             choice(choices: ['apply', 'destroy'], description: 'Select the operation to perform', name: 'ACTION')
                         ]
                     )
-                    env.ACTION = userChoice
+                    // Set variable in current context
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} - ${userChoice}"
+                    // Write it to a file or environment
+                    writeFile file: 'selected_action.txt', text: userChoice
                 }
             }
         }
 
         stage('Terraform Apply') {
             when {
-                expression { env.ACTION == 'apply' }
+                expression {
+                    return fileExists('selected_action.txt') &&
+                           readFile('selected_action.txt').trim() == 'apply'
+                }
             }
             steps {
                 input message: 'Confirm Apply?'
@@ -55,7 +63,10 @@ pipeline {
 
         stage('Terraform Destroy') {
             when {
-                expression { env.ACTION == 'destroy' }
+                expression {
+                    return fileExists('selected_action.txt') &&
+                           readFile('selected_action.txt').trim() == 'destroy'
+                }
             }
             steps {
                 input message: 'Confirm Destroy?'
@@ -66,10 +77,16 @@ pipeline {
 
     post {
         success {
-            echo "Pipeline completed successfully with action: ${env.ACTION}"
+            script {
+                def action = fileExists('selected_action.txt') ? readFile('selected_action.txt').trim() : 'N/A'
+                echo "Pipeline completed successfully with action: ${action}"
+            }
         }
         failure {
-            echo "Pipeline failed during action: ${env.ACTION}"
+            script {
+                def action = fileExists('selected_action.txt') ? readFile('selected_action.txt').trim() : 'N/A'
+                echo "Pipeline failed during action: ${action}"
+            }
         }
     }
 }
