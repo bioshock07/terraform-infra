@@ -35,14 +35,11 @@ pipeline {
                 script {
                     def userChoice = input(
                         id: 'ActionInput',
-                        message: 'Terraform plan completed successfully. Choose what to do next:',
+                        message: 'Terraform plan completed successfully. What do you want to do next?',
                         parameters: [
-                            choice(choices: ['apply', 'destroy'], description: 'Select the operation to perform', name: 'ACTION')
+                            choice(choices: ['apply', 'destroy'], description: 'Choose the operation to perform', name: 'ACTION')
                         ]
                     )
-                    // Set variable in current context
-                    currentBuild.displayName = "#${env.BUILD_NUMBER} - ${userChoice}"
-                    // Write it to a file or environment
                     writeFile file: 'selected_action.txt', text: userChoice
                 }
             }
@@ -56,7 +53,6 @@ pipeline {
                 }
             }
             steps {
-                input message: 'Confirm Apply?'
                 sh 'terraform apply -auto-approve tfplan'
             }
         }
@@ -69,7 +65,6 @@ pipeline {
                 }
             }
             steps {
-                input message: 'Confirm Destroy?'
                 sh 'terraform destroy -auto-approve -var-file=terraform.tfvars'
             }
         }
