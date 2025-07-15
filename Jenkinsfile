@@ -30,37 +30,48 @@ pipeline {
                 script {
                     PLAN_OUTPUT = sh(script: 'terraform plan -input=false -out=tfplan -var-file=terraform.tfvars', returnStdout: true)
                     echo PLAN_OUTPUT
+
                     if (PLAN_OUTPUT.contains("to destroy")) {
                         HAS_DESTROY = true
                     }
+
+                    // Save to file to make available across later stages
+                    writeFile file: 'has_destroy.txt', text: "${HAS_DESTROY}"
+                    writeFile file: 'plan_summary.txt', text: PLAN_OUTPUT.readLines().find { it.contains("to add") || it.contains("to destroy") || it.contains("to change") } ?: "No summary found"
                 }
             }
         }
 
         stage('Terraform Destroy') {
             when {
-                expression { return HAS_DESTROY }
+                expression {
+                    return fileExists('has_destroy.txt') && readFile('has_destroy.txt').trim() == 'true'
+                }
             }
             steps {
-                script {
-                    def destroyLine = PLAN_OUTPUT.readLines().find { it =~ /to destroy/ } ?: "Resources will be destroyed."
-                    echo "⚠️ ${destroyLine}"
-                }
+                echo "⚠️ Planned destruction:"
+                echo readFile('plan_summary.txt')
             }
         }
 
-        stage('Apply Plan') {
+        stage('Apply Plan (Confirmation)') {
             steps {
                 script {
                     def proceed = input(
                         id: 'ApplyApproval',
-                        message: 'Terraform plan completed. Proceed with apply?',
+                        message: 'Terraform plan complete. Proceed with apply?',
                         parameters: [booleanParam(defaultValue: false, description: 'Apply the plan?', name: 'CONFIRM_APPLY')]
                     )
                     if (!proceed) {
                         error("❌ User aborted.")
                     }
                 }
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                echo "🚀 Applying the plan now..."
                 sh 'terraform apply -auto-approve tfplan'
             }
         }
@@ -71,10 +82,10 @@ pipeline {
             echo "✅ Pipeline completed successfully."
         }
         failure {
-            echo "❌ Pipeline failed. Check logs."
+            echo "❌ Pipeline failed."
         }
         always {
-            sh 'rm -f tfplan || true'
+            sh 'rm -f tfplan has_destroy.txt plan_summary.txt || true'
         }
     }
 }
