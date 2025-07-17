@@ -1,0 +1,64 @@
+name: Terraform CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    name: Terraform Pipeline
+    runs-on: ubuntu-latest
+    environment: production
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: tf_plan
+        run: |
+          terraform plan -input=false -out=tfplan -var-file=terraform.tfvars
+          terraform show -no-color tfplan > tfplan_output.txt
+
+      - name: Echo Destroy Summary
+        if: always()
+        run: |
+          echo "Checking if there are resources to destroy..."
+          if grep -q "^-\/" tfplan_output.txt; then
+            echo "Resources marked for destruction:" && grep "^-\/" tfplan_output.txt
+          else
+            echo "No resources will be destroyed."
+          fi
+
+      - name: Terraform Apply Approval
+        if: github.ref == 'refs/heads/main'
+        uses: hmarr/auto-approve-action@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve tfplan
