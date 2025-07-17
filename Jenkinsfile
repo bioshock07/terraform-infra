@@ -2,7 +2,8 @@ pipeline {
     agent any
 
     environment {
-        PLAN_OUTPUT = ''
+        PLAN_SUMMARY = ""
+        HAS_ADD = false
         HAS_DESTROY = false
     }
 
@@ -28,15 +29,25 @@ pipeline {
         stage('Terraform Plan') {
             steps {
                 script {
-                    PLAN_OUTPUT = sh(script: 'terraform plan -input=false -out=tfplan -var-file=terraform.tfvars', returnStdout: true)
-                    echo PLAN_OUTPUT
+                    PLAN_SUMMARY = sh(
+                        script: 'terraform plan -input=false -out=tfplan -var-file=terraform.tfvars',
+                        returnStdout: true
+                    )
 
-                    if (PLAN_OUTPUT.contains("to destroy")) {
+                    echo PLAN_SUMMARY
+
+                    // Check plan summary lines
+                    if (PLAN_SUMMARY.contains("to add") && PLAN_SUMMARY =~ /(\d+) to add/ && PLAN_SUMMARY.find(/(\d+) to add/){ it.split(" ")[0].toInteger() > 0 }) {
+                        HAS_ADD = true
+                    }
+
+                    if (PLAN_SUMMARY.contains("to destroy") && PLAN_SUMMARY =~ /(\d+) to destroy/ && PLAN_SUMMARY.find(/(\d+) to destroy/){ it.split(" ")[0].toInteger() > 0 }) {
                         HAS_DESTROY = true
                     }
 
-                    writeFile file: 'has_destroy.txt', text: "${HAS_DESTROY}"
-                    writeFile file: 'plan_summary.txt', text: PLAN_OUTPUT.readLines().find { it.contains("to add") || it.contains("to change") || it.contains("to destroy") } ?: "No summary line"
+                    // Show quick summary
+                    def summaryLine = PLAN_SUMMARY.readLines().find { it.contains("to add") || it.contains("to change") || it.contains("to destroy") }
+                    echo "🔍 Plan Summary: ${summaryLine ?: 'No changes detected'}"
                 }
             }
         }
@@ -57,19 +68,23 @@ pipeline {
         }
 
         stage('Terraform Apply') {
+            when {
+                expression { return HAS_ADD }
+            }
             steps {
-                echo "🚀 Applying the plan..."
+                echo "🚀 Resources to be created/updated. Applying..."
                 sh 'terraform apply -auto-approve tfplan'
             }
         }
 
         stage('Terraform Destroy') {
             when {
-                expression { return fileExists('has_destroy.txt') && readFile('has_destroy.txt').trim() == 'true' }
+                expression { return HAS_DESTROY }
             }
             steps {
-                echo "💥 Destruction Summary:"
-                echo readFile('plan_summary.txt')
+                echo "💣 Resources marked for destruction:"
+                def destroyLine = PLAN_SUMMARY.readLines().find { it.contains("to destroy") }
+                echo destroyLine ?: "Nothing to destroy."
             }
         }
     }
@@ -80,9 +95,6 @@ pipeline {
         }
         failure {
             echo "❌ Pipeline failed."
-        }
-        always {
-            sh 'rm -f tfplan has_destroy.txt plan_summary.txt || true'
         }
     }
 }
