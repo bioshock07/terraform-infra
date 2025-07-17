@@ -4,32 +4,27 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   terraform:
-    name: Terraform Pipeline
+    name: Terraform Workflow
     runs-on: ubuntu-latest
-    environment: production
 
-    defaults:
-      run:
-        shell: bash
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+      TF_VAR_example_variable: "example" # Add any tfvars if required
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.0
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          terraform_version: 1.5.7
 
       - name: Terraform Init
         run: terraform init
@@ -40,25 +35,34 @@ jobs:
       - name: Terraform Plan
         id: tf_plan
         run: |
-          terraform plan -input=false -out=tfplan -var-file=terraform.tfvars
-          terraform show -no-color tfplan > tfplan_output.txt
+          terraform plan -input=false -out=tfplan -var-file=terraform.tfvars > plan_output.txt
+          cat plan_output.txt
 
-      - name: Echo Destroy Summary
-        if: always()
+      - name: Check for destroy operations
+        id: check_destroy
         run: |
-          echo "Checking if there are resources to destroy..."
-          if grep -q "^-\/" tfplan_output.txt; then
-            echo "Resources marked for destruction:" && grep "^-\/" tfplan_output.txt
+          if grep -q "Destroying" plan_output.txt; then
+            echo "destroy=true" >> $GITHUB_OUTPUT
           else
-            echo "No resources will be destroyed."
+            echo "destroy=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Terraform Apply Approval
-        if: github.ref == 'refs/heads/main'
-        uses: hmarr/auto-approve-action@v3
+      - name: Echo Destroy Changes (If Any)
+        if: steps.check_destroy.outputs.destroy == 'true'
+        run: |
+          echo "⚠️ The following resources will be destroyed:"
+          grep "Destroying" plan_output.txt || echo "No explicit destroy lines found."
+
+      - name: Manual Approval Before Apply/Destroy
+        uses: trstringer/manual-approval@v1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          secret: ${{ secrets.GITHUB_TOKEN }}
+          approvers: bioshock07
+          minimum-approvals: 1
+          issue-title: "Terraform Apply or Destroy Approval"
+          issue-body: "Approve to proceed with Terraform apply, including any destroy operations if present."
+          exclude-workflow-initiator-as-approver: false
+        timeout-minutes: 60
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main'
         run: terraform apply -auto-approve tfplan
